@@ -1,0 +1,283 @@
+<html>
+<head>
+
+</head>
+<body onload="init()">
+
+   
+  
+
+<canvas id="canvas" width="1000" height="1000" style="float:right"></canvas>
+<script>
+  var canvas = document.getElementById('canvas');
+var ctx = canvas.getContext('2d');
+var rect = {};
+var drag = false;
+var imageObj = null;
+var coordinates = null;
+var upload_filename = null;
+var relative_coordinates = null;
+var table_coordinates = null;
+function init() {
+    imageObj = new Image();
+    imageObj.onload = function () { ctx.drawImage(imageObj, 0, 0, imageObj.width, imageObj.height,
+                                                            0,0,canvas.width,canvas.height); };
+    imageObj.src = '{{ img_src }}';
+    //imageObj.style = 'width:1000px;height:1000px;float:right';
+    canvas.addEventListener('mousedown', mouseDown, false);
+    canvas.addEventListener('mouseup', mouseUp, false);
+    canvas.addEventListener('mousemove', mouseMove, false);
+
+    //upload_filename = '{{ upload_filename }}'
+    console.log(upload_filename)
+}
+
+function mouseDown(e) {
+    rect.startX = e.pageX - this.offsetLeft;
+    console.log("e.pageX"+e.pageX)
+    console.log("this.offsetLeft"+this.offsetLeft)
+    rect.startY = e.pageY - this.offsetTop;
+    drag = true;
+}
+
+function mouseUp() { drag = false; }
+
+function mouseMove(e) {
+    if (drag) {
+        ctx.clearRect(0, 0, 500, 500);
+        ctx.drawImage(imageObj, 0, 0, imageObj.width, imageObj.height,0,0,canvas.width,canvas.height);
+        rect.w = (e.pageX - this.offsetLeft) - rect.startX;
+        rect.h = (e.pageY - this.offsetTop) - rect.startY;
+        ctx.strokeStyle = 'red';
+        ctx.strokeRect(rect.startX, rect.startY, rect.w, rect.h);
+        //coordinates for text/roi
+        coordinates = rect.startX.toString() +","+ rect.startY.toString() +","+  rect.w.toString() +","+  rect.h.toString() ;
+
+        
+       
+
+        relative_x = Math.floor(rect.startX / this.width * 100);
+        relative_y = Math.floor(rect.startY / this.height * 100);
+        relative_w = Math.ceil(rect.w / this.width * 100);
+        relative_h = Math.ceil(rect.h / this.height * 100);
+
+        relative_coordinates = relative_x.toString()+","+ relative_y.toString() +","+  relative_w.toString() +","+  relative_h.toString() ;
+
+        //top, left, bottom and right coordinates for body table content
+        var top = Math.floor(rect.startY / this.height * 100);
+        left = Math.floor(rect.startX / this.width * 100) ;
+        bottom = top + relative_h
+        right = left + relative_w
+
+        table_coordinates = top.toString()+","+left.toString()+","+ bottom.toString() +","+  right.toString() 
+        
+    }
+  console.log("relative coordinates for text: "+relative_coordinates)
+  console.log("coordinates for text: "+coordinates)
+  console.log("coordinates for table: "+table_coordinates);
+}
+//
+
+
+init();
+</script>
+
+
+<div >
+<h1 style="color: black;">Upload new File</h1>
+  
+<form method=post enctype=multipart/form-data>
+  <p><input type=file name=file>
+     <input type=submit value=Upload>
+</form>
+
+
+<h2 style="color: black;">Confidence Level: {{ avgConf_str }}</h2>
+<h2>Review & Edit:</h2> 
+
+   <button onclick="enable()">Enable the text field</button> 
+   <script  type="text/javascript"> 
+ 
+    function enable() { 
+
+      var x = document.getElementsByClassName("textbox");
+      //document.getElementById("textbox").value="Save";
+      for (i = 0; i < x.length; i++) {
+        x[i].disabled = false;
+      }
+    } 
+
+    </script> 
+
+    
+
+
+<h3>Label content</h3>
+{% for i in len_user_defined_list %}
+<label>{{ user_defined_list[i] }}</label>
+
+<input type="text" id="{{ user_defined_list[i] }}" class="textbox" name="textbox" value="{{ result[i] }}" disabled=true><br><br> 
+
+{% endfor %}
+
+<button id="export" onclick="exportJson()">Export</button>
+<script>
+  function exportJson(){
+    var export_json = '{{ export_extractedResult_json }}'
+
+  }
+</script>
+<script>
+  function download(file, text) {
+    //creating an invisible element
+    var element = document.createElement("a");
+    element.setAttribute(
+      "href",
+      "data:text/plain;charset=utf-8, " + encodeURIComponent(text)
+    );
+    
+    element.setAttribute("download", file);
+
+    document.body.appendChild(element);
+  
+    //onClick property
+    element.click();
+    
+
+    document.body.removeChild(element);
+  }
+
+  // Start file download.
+  document.getElementById("export").addEventListener(
+    "click",
+    function () {
+      // Generate download of hello.txt file with some content
+      var text = '{{ export_extractedResult_json }}';
+      
+
+      var parser = new DOMParser;
+      var dom = parser.parseFromString(
+          '<!doctype html><body>' + text,
+          'text/html');
+      var decodedString = dom.body.textContent;
+
+      console.log(decodedString);
+      
+      var filename = "export-json.json";
+
+      download(filename, decodedString);
+    },
+    false
+  );
+</script>
+
+<script src="//ajax.googleapis.com/ajax/libs/jquery/1.9.1/jquery.min.js"></script>
+<script>window.jQuery || document.write('<script src="{{ url_for('static', filename='jquery.js') }}">\x3C/script>')</script>
+<script type=text/javascript>
+  $SCRIPT_ROOT = {{ request.script_root|tojson|safe }};
+</script>
+
+<h3>Selected Area Value:</h3>
+  <span id=result>?</span>
+<br>
+
+<a href=# id=calculate>Search</a>
+  <script type=text/javascript>
+    img_src = '{{ img_src }}'
+    console.log(img_src)
+    $(function() {
+      $('a#calculate').bind('click', function() {
+        $.getJSON($SCRIPT_ROOT + '/retrieve_roi', {
+          
+          coordinates: relative_coordinates,
+          img_src: img_src,
+          
+          upload_filename: upload_filename
+
+        }, function(data) {
+          $("#result").text(data.result);
+          //$("#DELIVERY").val(data.result)
+          //document.getElementById("DELIVERY").value = data.result
+          console.log(data.result);
+        });
+        return false;
+      });
+    });
+  </script>
+
+
+
+
+
+<h3>Body Content</h3>
+
+<a href=# id=calculate2>Extract Table Content</a>
+<br><br>
+  <script type=text/javascript>
+    upload_filename = '{{ upload_filename }}'
+    $(function() {
+      $('a#calculate2').bind('click', function() {
+       
+        $.getJSON($SCRIPT_ROOT + '/table_content', {
+          
+          coordinates: table_coordinates,
+          upload_filename: upload_filename
+          
+        }, function(data) {
+          $("#table_content_text").text(data.tables_json);
+          document.getElementById("table_content").innerHTML = data.tables_html;
+          console.log(data.tables_json);
+        });
+        return false;
+      });
+    });
+  </script>
+
+<!-- <p id="table_content"></p> -->
+
+
+<div id="table_content" contenteditable>
+  {% for table in tables %}
+      {{ table|safe }}
+  {% endfor %}
+</div>
+<h4>Table Content in JSON format</h4><br>
+<span id="table_content_text">?</span>
+
+<h3>Footer</h3>
+<p>{{ footer }}</p>
+<br><br>
+
+<h3>Suggested value key pair</h3>
+<p>{{ system_string }}</p>
+<br>
+<h3>All Extracted Text:</h3> 
+<p>{{ before_correction }}</p>
+
+<h3>Low Confidence Text</h3>
+<p>{{ low_conf_text_lst }}</p>
+
+<h3>After AI AutoCorrection</h3>
+<p>
+{% autoescape false %}
+{{ extracted_text }}
+{% endautoescape %}
+
+
+</p>
+
+
+<br><br>
+
+
+   
+<h3>Text Coordinates</h3>
+<div contenteditable>
+    {% for table in tables2 %}
+        {{ table|safe }}
+    {% endfor %}
+</div>
+   
+
+</body>
+</html>
