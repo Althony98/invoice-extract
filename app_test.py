@@ -25,6 +25,7 @@ import math
 import numpy as np
 import csv
 import time
+import ftfy
 start_time = time.time()
 
 
@@ -33,18 +34,19 @@ start_time = time.time()
 # 2. Comment/Uncomment the file path of your OS
 
 # Linux path to tesseract
-#pytesseract.pytesseract.tesseract_cmd = r"//usr//local//Cellar//tesseract//4.1.0//bin//tesseract"
+pytesseract.pytesseract.tesseract_cmd = r"/usr/bin/tesseract"
 # Hendra's Mac
 # IMAGE_SAVE_FOLDER = "//Users//hendrara//Workspace//phyton//static//"
 # DOWNLOAD_PATH = '//Users//hendrara//Downloads//'
 
 # Windows path to tesseract
-pytesseract.pytesseract.tesseract_cmd = r"C:\\Program Files\\Tesseract-OCR\\tesseract.exe"
+#pytesseract.pytesseract.tesseract_cmd = r"C:\\Program Files\\Tesseract-OCR\\tesseract.exe"
 # Althony's Windows
-TVEXTRACT_FOLDER = "C:\\Users\\Althony\\Documents\\tvextract-deploy"
-IMAGE_SAVE_FOLDER = TVEXTRACT_FOLDER+"\\static\\"
-PROCESS_FOLDER_PATH = TVEXTRACT_FOLDER+"\\process\\"
-EXPORT_FOLDER_PATH = TVEXTRACT_FOLDER+"\\Exports\\"
+TVEXTRACT_FOLDER = "/var/www/html/tvextract/application/libraries/python"
+#IMAGE_SAVE_FOLDER = TVEXTRACT_FOLDER+"/static/"
+IMAGE_SAVE_FOLDER = "/var/www/html/tvextract/uploads/static/"
+PROCESS_FOLDER_PATH = TVEXTRACT_FOLDER+"/process/"
+EXPORT_FOLDER_PATH = TVEXTRACT_FOLDER+"/Exports/"
 
 
 # define a folder to store and later serve the images
@@ -116,9 +118,11 @@ def processing():
         if file.lower().endswith(('png', 'jpg', 'jpeg', 'tiff', 'pdf')):
 
             tempUpFileName = upload_filename
+            extracted_text = ""
+
             if file.lower().endswith('pdf'):
 
-                pages = convert_from_path(file, 500)
+                pages = convert_from_path(file, 250)
 
                 image_counter = 1
 
@@ -136,7 +140,7 @@ def processing():
 
                     image = Image.open(IMAGE_SAVE_FOLDER +
                                        upload_filename+"_gray.jpg")
-                    invert_img = PIL.ImageOps.invert(image)
+                    invert_img = PIL.ImageOps.invert(image.convert('RGB'))
 
                     invert_img.save(IMAGE_SAVE_FOLDER +
                                     upload_filename+"_inverted.jpg", 'JPEG')
@@ -147,14 +151,17 @@ def processing():
 
                 # Create an completely empty Dataframe without any column names, indices or data
                 img_data = pd.DataFrame()
-                extracted_text = ""
+
                 for i in range(1, filelimit + 1):
 
                     upload_filename = tempUpFileName[:-4] + \
-                        "-"+str(i)+"_inverted.jpg"
+                        "-"+str(i)+".jpg"
+
+                    print(upload_filename)
 
                     extracted_text += " \n"+pytesseract.image_to_string(
-                        Image.open(IMAGE_SAVE_FOLDER + upload_filename), lang='eng+ind')
+                        Image.open(IMAGE_SAVE_FOLDER +
+                                   upload_filename), lang='eng+ind')
 
                     print(extracted_text)
 
@@ -165,18 +172,19 @@ def processing():
                     print(img_data)
 
                 # only take first page, need fix
-                img_src = UPLOAD_FOLDER + tempUpFileName[:-4]+"-1_inverted.jpg"
+                img_src = IMAGE_SAVE_FOLDER + \
+                    tempUpFileName[:-4]+"-1_inverted.jpg"
 
             elif(file.lower().endswith('png')):
                 im = Image.open(file)
                 rgb_im = im.convert('RGB')
                 rgb_im.save(IMAGE_SAVE_FOLDER + tempUpFileName[:-4]+".jpg")
-                img_src = UPLOAD_FOLDER + tempUpFileName[:-4]+".jpg"
+                img_src = IMAGE_SAVE_FOLDER + tempUpFileName[:-4]+".jpg"
             else:
                 print(file)
                 image = Image.open(file)
                 image.save(IMAGE_SAVE_FOLDER + tempUpFileName[:-4]+".jpg")
-                img_src = UPLOAD_FOLDER + tempUpFileName[:-4]+".jpg"
+                img_src = IMAGE_SAVE_FOLDER + tempUpFileName[:-4]+".jpg"
                 print(img_src)
 
             #img = cv2.resize(img, (1000, 1000))
@@ -187,7 +195,7 @@ def processing():
             # im_thresh = threshold(im_blur)
             # image = im_thresh
 
-            img = cv2.imread("."+img_src, 0)
+            #img = cv2.imread(img_src, 0)
             # alpha = 4.0
             # beta = -160
 
@@ -196,13 +204,13 @@ def processing():
 
             # cv2.imwrite("."+img_src, new)
 
-            image = Image.open("."+img_src)
+            image = Image.open(img_src)
 
             extracted_text = pytesseract.image_to_string(
                 image, lang='eng+ind+msa', config="--psm 6")
             img_data = pytesseract.image_to_data(
                 image, lang='eng+ind+msa',  output_type='data.frame')
-            img_src = "."+img_src
+            #img_src = "."+img_src
 
             print(extracted_text)
 
@@ -314,7 +322,8 @@ def processing():
 
             table_json = json.loads(table_json)
             # Footer content
-
+            img = cv2.imread(img_src, 0)
+            print(img)
             image = cv2.resize(img, (1000, 1000))
             thresh = 255 - cv2.threshold(image, 0, 255,
                                          cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU)[1]
@@ -337,8 +346,10 @@ def processing():
             try:
 
                 # Open database connection
-                db = pymysql.connect(host='localhost',
-                                     user='root',
+                db = pymysql.connect(host='tvextract.chrlbwkar9om.ap-southeast-1.rds.amazonaws.com',
+                                     user='drife',
+                                     password='123masuk',
+                                     port=3306,
                                      db='tvextract')
 
                 sql = "SELECT * FROM `document_category` where id = 1"
@@ -346,13 +357,15 @@ def processing():
 
                 # Execute the SQL command
                 cursor.execute(sql)
-
+                print("MySQL database connected")
                 # Fetch all the rows in a list of lists.
                 jsonStr = cursor.fetchall()
                 for row in jsonStr:
-                    jsonStr = row[4]
-                    print("dictionary_json = ", row[4])
+                    jsonStr = row[3]
+                    print("dictionary_json = ", row[3])
                     # print(row[5])
+
+                #jsonStr = """[{"text":"invoice","label":"invoice number","nodes":[{"text":"inv"},{"text":"iv."},{"text":"faktur"}]},{"text":"date","label":"invoice date","nodes":[{"text":"day"},{"text":"tarikh"}]},{"text":"subtotal","label":"sub total","nodes":[{"text":"subtotal:"},{"text":"subtotal."},{"text":"sub total"},{"text":"sub"}]},{"text":"total","label":"total","nodes":[{"text":"jumlah"},{"text":"all together"},{"text":"sum"},{"text":"totals"}]},{"text":"tax","label":"tax","nodes":[{"text":"vat"}]},{"text":"deadline","label":"due date","nodes":[{"text":"due"}]}]"""
 
                 dictionary_json = json.loads(jsonStr)
 
@@ -364,7 +377,19 @@ def processing():
                 print(dictionary_key)
 
             except pymysql.Error as e:
-                print("MySQL Database Error")
+                print("MySQL Database Error: "+str(e))
+
+            # temporary, removed once cloud db connected
+            # jsonStr = """[{"text":"invoice","label":"invoice number","nodes":[{"text":"inv"},{"text":"iv."},{"text":"faktur"}]},{"text":"date","label":"invoice date","nodes":[{"text":"day"},{"text":"tarikh"}]},{"text":"subtotal","label":"sub total","nodes":[{"text":"subtotal:"},{"text":"subtotal."},{"text":"sub total"},{"text":"sub"}]},{"text":"total","label":"total","nodes":[{"text":"jumlah"},{"text":"all together"},{"text":"sum"},{"text":"totals"}]},{"text":"tax","label":"tax","nodes":[{"text":"vat"}]},{"text":"deadline","label":"due date","nodes":[{"text":"due"}]}]"""
+            # dictionary_json = ""
+            # dictionary_json = json.loads(jsonStr)
+
+            # dictionary_key = []
+
+            # for i in range(len(dictionary_json)):
+            #     dictionary_key.append(dictionary_json[i]["text"])
+
+            # print(dictionary_key)
 
             user_defined_list_string = request.args.get('predefined')
             if(user_defined_list_string == None):
@@ -383,7 +408,8 @@ def processing():
             extracted_text = extracted_text.lower()
             words = extracted_text.split()
             words = text_lemmatization(words)
-            extracted_text = extracted_text.replace('\n', '<br>')
+            extracted_text = extracted_text.replace(
+                '\n', '<br>')  # can try remove
             print("Extracted text after data cleaning  \n")
             print(words)
             len_user_defined_list = range(len(user_defined_list))
@@ -409,7 +435,7 @@ def processing():
 
             # "Automated" label retrival
             system_defined_label = ['invoice', 'date', 'deadline', 'balance', 'p.o',
-                                    'purchase', 'subtotal', 'discounts', 'tax', 'shipping', 'total', 'paid']
+                                    'purchase', 'subtotal', 'discount', 'tax', 'shipping', 'total', 'paid']
             system_result = []
             searchLabel(system_defined_label, next_word, system_result, words,
                         found_similar_label, dictionary_json, dictionary_key)
@@ -430,45 +456,45 @@ def processing():
             extracted_text = clean_text_round1(extracted_text)
             extracted_text = clean_text_round2(extracted_text)
 
-            img_src = UPLOAD_FOLDER + tempUpFileName[:-4]+"-1.jpg"
+            img_src = IMAGE_SAVE_FOLDER + tempUpFileName[:-4]+"-1.jpg"
 
             print("--- %s seconds ---" % (time.time() - start_time))
 
-            # return jsonify({"status": "Successfully processed",
-            #                 "average_confidence_level": avgConf_str,
-            #                 "all_extracted_text": extracted_text,
-            #                 "result_list": my_string,
-            #                 "user_defined_list": user_defined_list,
-            #                 "result": result,
-            #                 # "Item Content":[df.to_html(classes='df', header="true")],
-            #                 # "Text Coordinates":[img_data.to_html(classes='img_data', header="true")],
-            #                 "img_src": img_src,
-            #                 "table_json": table_json,
-            #                 "footer": trim_footer,
-            #                 "sugested_key_value_pair": system_string,
+            return jsonify({"status": "Successfully processed",
+                            "average_confidence_level": avgConf_str,
+                            "all_extracted_text": extracted_text,
+                            "result_list": my_string,
+                            "user_defined_list": user_defined_list,
+                            "result": result,
+                            # "Item Content":[df.to_html(classes='df', header="true")],
+                            # "Text Coordinates":[img_data.to_html(classes='img_data', header="true")],
+                            "img_src": img_src,
+                            "table_json": table_json,
+                            "footer": trim_footer,
+                            "sugested_key_value_pair": system_string,
 
-            #                 })
+                            })
 
-            return render_template('Edit & Review.html',
-                                   msg='Successfully processed',
-                                   low_conf_text_lst=low_conf_text_lst,
-                                   avgConf_str=avgConf_str,
-                                   before_correction=before_correction,
-                                   extracted_text=extracted_text,
-                                   len_user_defined_list=len_user_defined_list,
-                                   user_defined_list=user_defined_list,
-                                   result=result,
-                                   tables2=[img_data.to_html(
-                                       classes='img_data', header="true")],
-                                   tables=[body_content.to_html(
-                                       classes='body_content', header="true")],
-                                   footer=trim_footer,
-                                   img_src=img_src,
-                                   system_string=system_string,
-                                   upload_filename=upload_filename,
-                                   export_extractedResult_json=my_string,
-                                   tables_json=json.dumps(table_json)
-                                   )
+            # return render_template('Edit & Review.html',
+            #                      msg='Successfully processed',
+            #                     low_conf_text_lst=low_conf_text_lst,
+            #                    avgConf_str=avgConf_str,
+            #                   before_correction=before_correction,
+            #                  extracted_text=extracted_text,
+            #                 len_user_defined_list=len_user_defined_list,
+            #                user_defined_list=user_defined_list,
+            #               result=result,
+            #              tables2=[img_data.to_html(
+            #                 classes='img_data', header="true")],
+            #            tables=[body_content.to_html(
+            #               classes='body_content', header="true")],
+            #          footer=trim_footer,
+            #         img_src=img_src,
+            #        system_string=system_string,
+            #       upload_filename=upload_filename,
+            #      export_extractedResult_json=my_string,
+            #     tables_json=json.dumps(table_json)
+            #    )
         else:
             return "File type not support."
 
@@ -575,7 +601,7 @@ def clean_text_round2(text):
     text = re.sub('[:‘’“”…]', '', text)
     text = re.sub("\[", '', text)
     text = re.sub("\(", '', text)
-    #text = re.sub('\n', '', text)
+    text = re.sub('<br>', '', text)  # remove for jsonify output
     # print(text)
     return text
 
@@ -702,8 +728,8 @@ def retrieveROI():
     # Get text of selected area
     img_src = request.args.get('img_src')
     #img_src = request.args.get('upload_filename')
-
-    image = cv2.imread("."+img_src, 0)
+    print(img_src)
+    image = cv2.imread(img_src, 0)
 
     image = cv2.resize(image, (1000, 1000))
     thresh = 255 - cv2.threshold(image, 0, 255,
@@ -790,5 +816,377 @@ def retrieveTableContent():
         classes='body_content', header="true")])
 
 
+@app.route("/idcard")
+def processID():
+    upload_filepath = request.args.get('upload_filepath')
+    # (1) Read
+    img = cv2.imread(upload_filepath)
+    gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+    cv2.imwrite("./KTP-OCR/dataset/im_gray.jpg", gray)
+
+    # (2) Threshold
+    th, threshed = cv2.threshold(gray, 127, 255, cv2.THRESH_TRUNC)
+    cv2.imwrite("./KTP-OCR/dataset/im_thresh.jpg", (threshed))
+
+    # (3) Detect
+    #result = pytesseract.image_to_string((threshed), lang="ind",config="--psm 6")
+
+    img_data = pytesseract.image_to_data(
+        (threshed), lang="ind", config="--psm 6", output_type='data.frame')
+
+    img_data.to_csv("./coordinates.csv")
+
+    # loop over each of the individual text localizations
+    for i in range(0, len(img_data["text"])):
+        # extract the bounding box coordinates of the text region from
+        # the current result
+        x = img_data["left"][i]
+        y = img_data["top"][i]
+        w = img_data["width"][i]
+        h = img_data["height"][i]
+
+        # extract the OCR text itself along with the confidence of the
+        # text localization
+        text = img_data["text"][i]
+        conf = int(img_data["conf"][i])
+
+        # can be define by user
+        min_conf = 62
+
+        # filter out weak confidence text localizations
+        if conf > min_conf:
+            # strip out non-ASCII text so we can draw the text on the image
+            # using OpenCV, then draw a bounding box around the text along
+            # with the text itself
+            text = "".join(
+                [c if ord(c) < 128 else "" for c in text]).strip()
+            cv2.rectangle(img, (x, y), (x + w, y + h),
+                          (0, 255, 0), 2)
+            cv2.putText(img, text, (x, y - 10),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 0, 255), 2)
+
+    result = img_data_text(img_data)
+    print(result)
+
+    result = id_clean_text_round1(result)
+
+    result = id_clean_text_round2(result)
+
+    print(result)
+
+    # img_data = pytesseract.image_to_data((threshed), lang="ind",config="--psm 6", output_type='data.frame')
+    img_data = img_data.dropna()
+    # img_data.to_csv("C:\\Users\\HPC1\\Documents\\tvextract-master\\KTP-OCR\\dataset\\coordinates.csv")
+    total = img_data.sum(axis=0)
+    count = img_data.count(axis=0)
+    avgConf = total.conf / count.conf
+    avgConf_str = str(("%.2f" % avgConf) + " %")
+    print("\nExtraction Confidence Level: "+avgConf_str)
+
+    text = result.split()
+    print(text)
+
+    provinsi = nik = nama = lahir = kelamin = darah = alamat = rt_rw = kel_desa = kecamatan = agama = perkawinan = pekerjaan = kewarganegaraan = hingga = ""
+
+    provinsi = result.splitlines()[0] + " " + result.splitlines()[1]
+    print(provinsi)
+
+    try:
+        nik = text[text.index("nik")+1] + " " + text[text.index("nik")+2]
+        print(nik)
+    except:
+        nik = result.splitlines()[2]
+        r1 = re.findall(r"\d[-/]?", nik)
+        strs = ""
+        for r in r1:
+            strs += ''.join(r)
+        nik = strs
+        print(nik)
+
+    nama = text[text.index("nama")+1]+" "+text[text.index("nama")+2]
+    print(nama)
+    try:
+
+        lahir = text[text.index("lahir")+1]+" "+text[text.index("lahir")+2]
+        print(lahir)
+    except:
+        lahir = ""
+        print("Lahir Not Found")
+
+    try:
+        kelamin = text[text.index("kelamin")+1]
+        if(kelamin == "-"):
+            kelamin = text[text.index("kelamin")+2]
+        print(kelamin)
+    except:
+        kelamin = result.splitlines()[5]
+        print(kelamin)
+    try:
+        if("darah" in text):
+            darah = text[text.index("darah")+1]
+            print(darah)
+        elif("goldarah" in text):
+            darah = text[text.index("goldarah")+1]
+            print(darah)
+    except:
+        darah = ""
+        print(darah)
+
+    try:
+        if("alamat" in text):
+            alamat = text[text.index(
+                "alamat")+1]+" "+text[text.index("alamat")+2]+" "+text[text.index("alamat")+3]
+            print(alamat)
+    except:
+        alamat = ""
+        print("Not found "+alamat)
+
+    try:
+        if("rt/rw" in text):
+            rt_rw = text[text.index(
+                "rt/rw")+1]+" "+text[text.index("rt/rw")+2]+" "+text[text.index("rt/rw")+3]
+            print(rt_rw)
+        elif("rtrw" in text):
+            rt_rw = text[text.index(
+                "rtrw")+1]+" "+text[text.index("rtrw")+2]+" "+text[text.index("rtrw")+3]
+            print(rt_rw)
+        elif("rurw" in text):
+            rt_rw = text[text.index(
+                "rurw")+1]+" "+text[text.index("rurw")+2]+" "+text[text.index("rurw")+3]
+            print(rt_rw)
+    except:
+        rt_rw = ""
+        print("Not found "+rt_rw)
+
+    try:
+        if("kel/desa" in text):
+            kel_desa = text[text.index("kel/desa")+1]
+            print(kel_desa)
+        elif("ketdesa" in text):
+            kel_desa = text[text.index("ketdesa")+1] + \
+                " "+text[text.index("ketdesa")+2]
+            print(kel_desa)
+        elif("kelidesa" in text):
+            kel_desa = text[text.index("kelidesa")+1] + \
+                " "+text[text.index("kelidesa")+2]
+            print(kel_desa)
+        elif("keldesa" in text):
+            kel_desa = text[text.index("keldesa")+1] + \
+                " "+text[text.index("keldesa")+2]
+            print(kel_desa)
+        else:
+            kel_desa = "Not found"
+    except:
+        kel_desa = ""
+        print("Not found "+kel_desa)
+
+    try:
+        if("kecamatan" in text):
+            kecamatan = text[text.index("kecamatan")+1] + \
+                " "+text[text.index("kecamatan")+2]
+            print(kecamatan)
+    except:
+        kecamatan = ""
+        print("Not found "+kecamatan)
+
+    try:
+        if("agama" in text):
+            agama = text[text.index("agama")+1]
+            print(agama)
+    except:
+        agama = ""
+        print("Not found "+agama)
+
+    try:
+        if("perkawinan" in text):
+            perkawinan = text[text.index(
+                "perkawinan")+1]+" "+text[text.index("perkawinan")+2]
+            print(perkawinan)
+    except:
+        pekerjaan = ""
+        print("Not found "+pekerjaan)
+    try:
+        if("pekerjaan" in text):
+            pekerjaan = text[text.index("pekerjaan")+1]
+            print(pekerjaan)
+        elif("pokerjaan" in text):
+            pekerjaan = text[text.index("pokerjaan")+1]
+            print(pekerjaan)
+        else:
+            pekerjaan = ""
+    except:
+        pekerjaan = ""
+        print("Not found "+pekerjaan)
+
+    try:
+        if("kewarganegaraan" in text):
+            kewarganegaraan = text[text.index("kewarganegaraan")+1]
+            print(kewarganegaraan)
+        else:
+            kewarganegaraan = ""
+    except:
+        kewarganegaraan = ""
+        print("Not found "+kewarganegaraan)
+
+    try:
+        if("berlaku" in text):
+            hingga = text[text.index(
+                "berlaku")+1]+" "+text[text.index("berlaku")+2]+" "+text[text.index("berlaku")+3]
+            matches = datefinder.find_dates(hingga)
+            match_date = hingga
+            for match in matches:
+                if(match.date() == None):
+                    match_date = ""
+                else:
+                    match_date += match.date().strftime("%d %b %Y")
+                    break
+            hingga = match_date
+            print(hingga)
+        elif ("hingga" in text):
+            hingga = text[text.index("hingga")+1] + \
+                " "+text[text.index("hingga")+2]
+            matches = datefinder.find_dates(hingga)
+            match_date = ""
+            for match in matches:
+                if(match.date() == None):
+                    match_date += hingga
+                else:
+                    match_date += match.date().strftime("%d %b %Y")
+                    break
+            hingga = match_date
+            print(hingga)
+    except:
+        hingga = ""
+        print("Not found "+hingga)
+
+    user_defined_label = ['provinsi', 'nik', 'nama', 'lahir', 'kelamin', 'darah', 'alamat', 'rt/rw',
+                          'kel/desa', 'kecamatan', 'agama', 'status_perkawinan', 'pekerjaan', 'kewarganegaraan', 'berlaku_hingga']
+    result = [provinsi, nik, nama, lahir, kelamin, darah, alamat, rt_rw,
+              kel_desa, kecamatan, agama, perkawinan, pekerjaan, kewarganegaraan, hingga]
+
+    my_array = [user_defined_label, result]
+
+    pairs = zip(my_array[0], my_array[1])
+    json_values = ('"{}": "{}"'.format(label, value)
+                   for label, value in pairs)
+    my_string = '{' + ', '.join(json_values) + '}'
+
+    export_data = json.loads(my_string)
+
+    # print(export_data)
+
+    data_file = ""
+
+    try:
+
+        with open('./Exports/export-data.csv', newline='') as f:
+            reader = csv.reader(f)
+            row1 = next(reader)
+
+        if(list(export_data.keys()) == row1):
+            print("same header")
+            data_file = open('./Exports/export-data.csv', 'a', newline='')
+
+            csv_writer = csv.writer(data_file)
+
+            csv_writer.writerow(export_data.values())
+
+        else:
+            print("different header")
+            data_file = open('./Exports/export-data.csv', 'w', newline='')
+            csv_writer = csv.writer(data_file)
+            header = export_data.keys()
+            csv_writer.writerow(header)
+            csv_writer.writerow(export_data.values())
+
+    except:
+        print("exception error")
+
+        # now we will open a file for writing
+        data_file = open('./Exports/export-data.csv', 'w', newline='')
+
+        # create the csv writer object
+        csv_writer = csv.writer(data_file)
+
+        # Writing headers of CSV file
+        header = export_data.keys()
+        csv_writer.writerow(header)
+
+        # Writing data of CSV file
+        csv_writer.writerow(export_data.values())
+
+    finally:
+        data_file.close()
+
+    print("\nExtraction Confidence Level: "+avgConf_str)
+
+    json_formatted_str = json.dumps(export_data, indent=2)
+
+    print(json_formatted_str)
+
+    img = cv2.resize(img, (680, 450))
+    #cv2.imshow("ic_image_output",img);cv2.waitKey(0); cv2.destroyAllWindows(); cv2.waitKey(1)
+
+    return jsonify(Output=export_data, upload_filepath=upload_filepath)
+
+
+def img_data_text(img_data):
+    img_data = img_data.dropna()
+    n_boxes = len(img_data['text'])
+    pd_index = []
+    for i in range(n_boxes):
+        pd_index.append(i)
+    s = pd.Series(pd_index)
+    img_data = img_data.set_index([s])
+    num = 2
+    num2 = 2
+    num3 = 2
+    text = ""
+    for i in range(n_boxes):
+        if int(img_data.loc[i, 'block_num']) < num:
+            if int(img_data.loc[i, 'line_num']) < num2:
+                if int(img_data.loc[i, 'par_num']) < num3:
+                    text += img_data.loc[i, 'text'] + " "
+                else:
+                    num3 += 1
+                    text += "\n"
+                    text += img_data.loc[i, 'text'] + " "
+            else:
+                num2 += 1
+                text += "\n"
+                text += img_data.loc[i, 'text'] + " "
+
+        else:
+            num += 1
+            text += "\n"
+            text += img_data.loc[i, 'text'] + " "
+    return text
+
+
+def id_clean_text_round1(text):
+    '''Make text lowercase, remove text in square brackets, remove punctuation and remove words containing numbers.'''
+    text = text.lower()
+    text = re.sub('—', '-', text)
+    text = re.sub('…', '', text)
+    text = re.sub('“', '', text)
+    remove = string.punctuation
+    # don't remove hyphens
+    remove = remove.replace("-", "")
+    remove = remove.replace("/", "")
+    pattern = r"[{}]".format(remove)  # create the pattern
+    text = re.sub(pattern, "", text)
+    #text = re.sub('\w*\d\w*', '', text)
+    text = os.linesep.join([s for s in text.splitlines() if s])
+    return text
+
+# Apply a second round of cleaning
+
+
+def id_clean_text_round2(text):
+    text = ftfy.fix_text(text)
+    text = ftfy.fix_encoding(text)
+    return text
+
+
 if __name__ == '__main__':
-    app.run(port=8011, debug=True, threaded=True)
+    app.run(host="172.31.41.182", port=8011, debug=True, threaded=True)
