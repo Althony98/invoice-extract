@@ -139,7 +139,7 @@ def processing():
                                     upload_filename+"_gray.jpg", 'JPEG')
 
                     image = Image.open(IMAGE_SAVE_FOLDER +
-                                       upload_filename+"_gray.jpg")
+                                       upload_filename+".jpg")
                     invert_img = PIL.ImageOps.invert(image.convert('RGB'))
 
                     invert_img.save(IMAGE_SAVE_FOLDER +
@@ -172,8 +172,7 @@ def processing():
                     print(img_data)
 
                 # only take first page, need fix
-                img_src = IMAGE_SAVE_FOLDER + \
-                    tempUpFileName[:-4]+"-1_inverted.jpg"
+                img_src = IMAGE_SAVE_FOLDER + tempUpFileName[:-4]+"-1.jpg"
 
             elif(file.lower().endswith('png')):
                 im = Image.open(file)
@@ -279,7 +278,8 @@ def processing():
             f.close()
 
             # Generate searchable/OCR-ed PDF
-            pdf = pytesseract.image_to_pdf_or_hocr(image, extension='pdf')
+            pdf = pytesseract.image_to_pdf_or_hocr(
+                image, extension='pdf', lang="eng", config="--psm 6")
             with open(EXPORT_FOLDER_PATH + upload_filename+"-searchable.pdf", 'w+b') as f:
                 f.write(pdf)  # pdf type is bytes by default
 
@@ -290,7 +290,7 @@ def processing():
             tabula.convert_into(EXPORT_FOLDER_PATH + upload_filename+"-searchable.pdf", EXPORT_FOLDER_PATH +
                                 upload_filename+"-full.csv", output_format="csv", pages='all', area=(0, 0, 100, 100), relative_area=True)  # top,left,bottom,right
             tabula.convert_into(EXPORT_FOLDER_PATH + upload_filename+"-searchable.pdf", EXPORT_FOLDER_PATH +
-                                upload_filename+"-body.csv", output_format="csv", pages='all', area=(35, 0, 70, 100), relative_area=True)  # area=(524.201, 5.316, 1074.984, 1700.197)
+                                upload_filename+"-body.csv", output_format="csv", pages='all', area=(35, 0, 50, 100), relative_area=True)  # area=(524.201, 5.316, 1074.984, 1700.197)
             # # Fix bug if no column
             df = pd.read_csv(EXPORT_FOLDER_PATH +
                              upload_filename+"-body.csv", encoding='latin1')
@@ -865,7 +865,7 @@ def processID():
             cv2.putText(img, text, (x, y - 10),
                         cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 0, 255), 2)
 
-    result = img_data_text(img_data)
+    result = id_img_data_text(img_data)
     print(result)
 
     result = id_clean_text_round1(result)
@@ -892,7 +892,7 @@ def processID():
     print(provinsi)
 
     try:
-        nik = text[text.index("nik")+1] + " " + text[text.index("nik")+2]
+        nik = text[text.index("nik")+1] + "" + text[text.index("nik")+2]
         print(nik)
     except:
         nik = result.splitlines()[2]
@@ -1059,10 +1059,24 @@ def processID():
         hingga = ""
         print("Not found "+hingga)
 
-    user_defined_label = ['provinsi', 'nik', 'nama', 'lahir', 'kelamin', 'darah', 'alamat', 'rt/rw',
-                          'kel/desa', 'kecamatan', 'agama', 'status_perkawinan', 'pekerjaan', 'kewarganegaraan', 'berlaku_hingga']
+    user_defined_label = ['provinsi', 'nik', 'nama', 'lahir', 'kelamin', 'darah', 'alamat', 'rt/rw', 'kel/desa',
+                          'kecamatan', 'agama', 'status_perkawinan', 'pekerjaan', 'kewarganegaraan', 'berlaku_hingga', 'face_id_url', 'conf_lv']
     result = [provinsi, nik, nama, lahir, kelamin, darah, alamat, rt_rw,
               kel_desa, kecamatan, agama, perkawinan, pekerjaan, kewarganegaraan, hingga]
+
+    ori_img = cv2.resize(img, (1000, 700))
+    y = 650  # x
+    x = 150  # y
+    h = 1000
+    w = 600
+    image_cropped = ori_img[x:w, y:h]
+
+    # rename
+    cv2.imwrite(IMAGE_SAVE_FOLDER+result[1]+".jpg", image_cropped)
+    result.append(IMAGE_SAVE_FOLDER+result[1]+".jpg")
+
+    avgConf_str = calc_conf(img_data)
+    result.append(avgConf_str)
 
     my_array = [user_defined_label, result]
 
@@ -1130,7 +1144,7 @@ def processID():
     return jsonify(Output=export_data, upload_filepath=upload_filepath)
 
 
-def img_data_text(img_data):
+def id_img_data_text(img_data):
     img_data = img_data.dropna()
     n_boxes = len(img_data['text'])
     pd_index = []
@@ -1186,6 +1200,197 @@ def id_clean_text_round2(text):
     text = ftfy.fix_text(text)
     text = ftfy.fix_encoding(text)
     return text
+
+
+def img_data_text(img_data):
+    n_boxes = len(img_data['text'])
+    pd_index = []
+    for i in range(n_boxes):
+        pd_index.append(i)
+    s = pd.Series(pd_index)
+    img_data = img_data.set_index([s])
+
+    text = ""
+    min_conf = 90
+
+    current_block = int(img_data.loc[0, 'block_num'])
+    for i in range(n_boxes):
+        if int(img_data["conf"][i]) >= min_conf:
+            if (int(img_data.loc[i, 'block_num']) == current_block):
+                text += img_data.loc[i, 'text'] + " "
+
+            else:
+                current_block += 1
+                text += "\n"
+                text += img_data.loc[i, 'text'] + " "
+
+        else:
+            if (int(img_data.loc[i, 'block_num']) is not current_block):
+                current_block += 1
+                text += "\n"
+
+    return text
+
+
+def mykad_clean_text_round1(text):
+    '''Make text lowercase, remove text in square brackets, remove punctuation and remove words containing numbers.'''
+    text = text.lower()
+    text = re.sub('—', '', text)
+    text = re.sub('…', '', text)
+    text = re.sub('“', '', text)
+    remove = string.punctuation
+    # don't remove hyphens
+    #remove = remove.replace("-", "")
+    #remove = remove.replace("/", "")
+    pattern = r"[{}]".format(remove)  # create the pattern
+    text = re.sub(pattern, "", text)
+    #text = re.sub('\w*\d\w*', '', text)
+    text = os.linesep.join([s for s in text.splitlines() if s])
+    return text
+
+
+def calc_conf(img_data):
+    total = img_data.sum(axis=0)
+    count = img_data.count(axis=0)
+    avgConf = total.conf / count.conf
+    avgConf_str = str(("%.2f" % avgConf) + " %")
+    return avgConf_str
+
+
+pat = r"""
+\b                      # word boundary
+(?P<birthdate>\d{6})    # named group capture of birthdate, six digits
+-?                      # optional -
+(?P<birthplace>\d{2})   # named group, birthplace, 2 digits
+-?                      # optional -
+\d{3}                   # next 3 digits
+(?P<gender>\d)          # capture last digit representing gender
+\b                      # word boundary
+"""
+
+vpo = re.compile(pat, re.VERBOSE)
+
+codes = [('01', '21', '22', '23', '24'), ('02', '25', '26', '27'), ('03', '28', '29'),
+         ('04', '30'), ('05', '31', '59'), ('06',
+                                            '32', '33'), ('07', '34', '35'),
+         ('08', '36', '37', '38', '39'), ('09',
+                                          '40'), ('10', '41', '42', '43', '44'),
+         ('11', '45', '46'), ('12', '47', '48',
+                              '49'), ('13', '50', '51', '52', '53'),
+         ('14', '54', '55', '56', '57'), ('15', '58'), ('16',), ('82',)]
+
+# place of birth
+place = ('Johor', 'Kedah', 'Kelantan', 'Malacca', 'Negri Sembilan',
+         'Pahang', 'Penang',  'Perak',  'Perlis', 'Selangor', 'Terengganu', 'Sabah',
+         'Sarawak', 'Kuala Lumpur', 'Labuan', 'Putrajaya', 'Unknown')
+
+
+def get_place(code):
+    for i, item in enumerate(codes):
+        if code in item:
+            return place[i]
+    return None
+
+
+def get_gender(n): return 'Male' if int(n) % 2 else 'Female'
+
+
+def parse_ic(ic):
+    m = vpo.search(ic)
+    if m:
+        return(m.group('birthdate'),
+               get_place(m.group('birthplace')),
+               get_gender(m.group('gender')))
+
+
+@app.route("/processmykad")
+def process_mykad():
+
+    upload_filepath = request.args.get('upload_filepath')
+
+    img = cv2.imread(upload_filepath)
+    gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+
+    th, threshed = cv2.threshold(gray, 127, 255, cv2.THRESH_TRUNC)
+
+    threshed = cv2.resize(threshed, (1000, 700))
+
+    y = 0
+    x = 0
+    h = 650  # w
+    w = 1000  # h
+    ic_details_cropped = (threshed)[x:w, y:h]
+
+    img_data = pytesseract.image_to_data(
+        ic_details_cropped, lang="msa", output_type='data.frame')
+    img_data = img_data.dropna()
+
+    result = img_data_text(img_data)
+
+    result = mykad_clean_text_round1(result)
+
+    result = id_clean_text_round2(result)
+
+    # print(result)
+
+    result = result.split("\n")
+
+    # Analyze IC No.
+
+    ic_str = parse_ic(result[0])[0]
+
+    ic_str = ic_str[:2] + '-' + ic_str[2:]
+    ic_str = ic_str[:5] + '-' + ic_str[5:]
+
+    matches = datefinder.find_dates(ic_str)
+    match_date = ""
+    for match in matches:
+        if(match.date() == None):
+            match_date = ""
+        else:
+            match_date += match.date().strftime("%d %b %Y")
+            # print(match_date)
+            break
+
+    result.append(match_date)
+    result.append(parse_ic(result[0])[1])
+    result.append(parse_ic(result[0])[2])
+
+    result.insert(0, "Malaysia_IC")
+
+    avgConf_str = calc_conf(img_data)
+    result.insert(1, avgConf_str)
+
+    ori_img = cv2.resize(img, (1000, 700))
+    y = 650  # x
+    x = 150  # y
+    h = 1000
+    w = 600
+    image_cropped = ori_img[x:w, y:h]
+
+    # rename
+    cv2.imwrite(IMAGE_SAVE_FOLDER+result[2][:-1]+".jpg", image_cropped)
+    result.append(IMAGE_SAVE_FOLDER+result[2][:-1]+".jpg")
+
+    # plt.imshow(image_cropped[...,::-1])
+
+    ic_key = ["doc_type", "conf_lv", "ic_no", "name", "address",
+              "birthdate", "birthplace", "gender", "face_id_url"]
+
+    my_array = [ic_key, result]
+
+    pairs = zip(my_array[0], my_array[1])
+    json_values = ('"{}": "{}"'.format(label, value)
+                   for label, value in pairs)
+    my_string = '{' + ', '.join(json_values) + '}'
+
+    export_data = json.loads(my_string)
+
+    json_formatted_str = json.dumps(export_data, indent=2)
+
+    print(json_formatted_str)
+
+    return jsonify(process_mykad_output=export_data, upload_filepath=upload_filepath)
 
 
 if __name__ == '__main__':
