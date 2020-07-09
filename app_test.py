@@ -26,6 +26,15 @@ import numpy as np
 import csv
 import time
 import ftfy
+import requests
+from bs4 import BeautifulSoup
+from xmljson import badgerfish as bf
+from xml.etree.ElementTree import fromstring
+from json import dumps
+from xmljson import parker, Parker
+import json
+from pyzbar.pyzbar import decode
+from PIL import Image
 start_time = time.time()
 
 
@@ -42,11 +51,11 @@ pytesseract.pytesseract.tesseract_cmd = r"/usr/bin/tesseract"
 # Windows path to tesseract
 #pytesseract.pytesseract.tesseract_cmd = r"C:\\Program Files\\Tesseract-OCR\\tesseract.exe"
 # Althony's Windows
-TVEXTRACT_FOLDER = "/var/www/html/tvextract/application/libraries/python"
+TVEXTRACT_FOLDER = "/var/www/html/tvextract/application/libraries/python/"
 #IMAGE_SAVE_FOLDER = TVEXTRACT_FOLDER+"/static/"
 IMAGE_SAVE_FOLDER = "/var/www/html/tvextract/uploads/static/"
-PROCESS_FOLDER_PATH = TVEXTRACT_FOLDER+"/process/"
-EXPORT_FOLDER_PATH = TVEXTRACT_FOLDER+"/Exports/"
+PROCESS_FOLDER_PATH = TVEXTRACT_FOLDER+"process/"
+EXPORT_FOLDER_PATH = TVEXTRACT_FOLDER+"Exports/"
 
 
 # define a folder to store and later serve the images
@@ -95,7 +104,6 @@ def invert(img):
 
 @app.route('/', methods=['GET', 'POST'])
 def processing():
-    start_time = time.time()
     process_folder = ""
     index_folder = 0
     if platform.system() == 'Windows':
@@ -590,7 +598,7 @@ def clean_text_round1(text):
     remove = remove.replace("/", "")
     pattern = r"[{}]".format(remove)  # create the pattern
     re.sub(pattern, "", text)
-    #text = re.sub('\w*\d\w*', '', text)
+
     return text
 
 # Apply a second round of cleaning
@@ -602,7 +610,9 @@ def clean_text_round2(text):
     text = re.sub("\[", '', text)
     text = re.sub("\(", '', text)
     text = re.sub('<br>', '', text)  # remove for jsonify output
-    # print(text)
+    text = ftfy.fix_text(text)
+    text = ftfy.fix_encoding(text)
+
     return text
 
 
@@ -818,6 +828,7 @@ def retrieveTableContent():
 
 @app.route("/idcard")
 def processID():
+    doc_type = "Indonesia_IC"
     upload_filepath = request.args.get('upload_filepath')
     # (1) Read
     img = cv2.imread(upload_filepath)
@@ -827,9 +838,6 @@ def processID():
     # (2) Threshold
     th, threshed = cv2.threshold(gray, 127, 255, cv2.THRESH_TRUNC)
     cv2.imwrite("./KTP-OCR/dataset/im_thresh.jpg", (threshed))
-
-    # (3) Detect
-    #result = pytesseract.image_to_string((threshed), lang="ind",config="--psm 6")
 
     img_data = pytesseract.image_to_data(
         (threshed), lang="ind", config="--psm 6", output_type='data.frame')
@@ -860,10 +868,10 @@ def processID():
             # with the text itself
             text = "".join(
                 [c if ord(c) < 128 else "" for c in text]).strip()
-            cv2.rectangle(img, (x, y), (x + w, y + h),
-                          (0, 255, 0), 2)
-            cv2.putText(img, text, (x, y - 10),
-                        cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 0, 255), 2)
+            # cv2.rectangle(img, (x, y), (x + w, y + h),
+            #               (0, 255, 0), 2)
+            # cv2.putText(img, text, (x, y - 10),
+            #             cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 0, 255), 2)
 
     result = id_img_data_text(img_data)
     print(result)
@@ -1060,7 +1068,7 @@ def processID():
         print("Not found "+hingga)
 
     user_defined_label = ['provinsi', 'nik', 'nama', 'lahir', 'kelamin', 'darah', 'alamat', 'rt/rw', 'kel/desa',
-                          'kecamatan', 'agama', 'status_perkawinan', 'pekerjaan', 'kewarganegaraan', 'berlaku_hingga', 'face_id_url', 'conf_lv']
+                          'kecamatan', 'agama', 'status_perkawinan', 'pekerjaan', 'kewarganegaraan', 'berlaku_hingga']
     result = [provinsi, nik, nama, lahir, kelamin, darah, alamat, rt_rw,
               kel_desa, kecamatan, agama, perkawinan, pekerjaan, kewarganegaraan, hingga]
 
@@ -1073,10 +1081,10 @@ def processID():
 
     # rename
     cv2.imwrite(IMAGE_SAVE_FOLDER+result[1]+".jpg", image_cropped)
-    result.append(IMAGE_SAVE_FOLDER+result[1]+".jpg")
+
+    face_id_url = IMAGE_SAVE_FOLDER+result[1]+".jpg"
 
     avgConf_str = calc_conf(img_data)
-    result.append(avgConf_str)
 
     my_array = [user_defined_label, result]
 
@@ -1140,8 +1148,10 @@ def processID():
 
     img = cv2.resize(img, (680, 450))
     #cv2.imshow("ic_image_output",img);cv2.waitKey(0); cv2.destroyAllWindows(); cv2.waitKey(1)
+    processed_image = IMAGE_SAVE_FOLDER+result[1]+"_card.jpg"
+    cv2.imwrite(processed_image, img)
 
-    return jsonify(Output=export_data, upload_filepath=upload_filepath)
+    return jsonify(Output=export_data, upload_filepath=upload_filepath, face_id_url=face_id_url, conf_lv=avgConf_str, doc_type=doc_type, processed_image=processed_image)
 
 
 def id_img_data_text(img_data):
@@ -1305,10 +1315,11 @@ def parse_ic(ic):
 
 @app.route("/processmykad")
 def process_mykad():
-
+    doc_type = "Malaysia_IC"
     upload_filepath = request.args.get('upload_filepath')
 
     img = cv2.imread(upload_filepath)
+
     gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
 
     th, threshed = cv2.threshold(gray, 127, 255, cv2.THRESH_TRUNC)
@@ -1356,10 +1367,7 @@ def process_mykad():
     result.append(parse_ic(result[0])[1])
     result.append(parse_ic(result[0])[2])
 
-    result.insert(0, "Malaysia_IC")
-
     avgConf_str = calc_conf(img_data)
-    result.insert(1, avgConf_str)
 
     ori_img = cv2.resize(img, (1000, 700))
     y = 650  # x
@@ -1370,12 +1378,13 @@ def process_mykad():
 
     # rename
     cv2.imwrite(IMAGE_SAVE_FOLDER+result[2][:-1]+".jpg", image_cropped)
-    result.append(IMAGE_SAVE_FOLDER+result[2][:-1]+".jpg")
+
+    face_id_url = IMAGE_SAVE_FOLDER+result[2][:-1]+".jpg"
 
     # plt.imshow(image_cropped[...,::-1])
 
-    ic_key = ["doc_type", "conf_lv", "ic_no", "name", "address",
-              "birthdate", "birthplace", "gender", "face_id_url"]
+    ic_key = ["ic_no", "name", "address",
+              "birthdate", "birthplace", "gender"]
 
     my_array = [ic_key, result]
 
@@ -1389,8 +1398,118 @@ def process_mykad():
     json_formatted_str = json.dumps(export_data, indent=2)
 
     print(json_formatted_str)
+    ic_saved_image_path = IMAGE_SAVE_FOLDER+result[0]+".jpg"
+    ic_saved_image_path = re.sub(" ", "", ic_saved_image_path)
+    cv2.imwrite(ic_saved_image_path, img)
+    return jsonify(process_mykad_output=export_data, upload_filepath=upload_filepath, doc_type=doc_type, conf_lv=avgConf_str, face_id_url=face_id_url, ic_saved_image_path=ic_saved_image_path)
 
-    return jsonify(process_mykad_output=export_data, upload_filepath=upload_filepath)
+
+@app.route('/processTaxInvoice')
+def processTaxInvoice():
+
+    upload_filepath = request.args.get('upload_filepath')
+    user_defined_list = request.args.get('predefined')
+
+    if upload_filepath.endswith('pdf'):
+        pages = convert_from_path(upload_filepath)
+
+        image_counter = 1
+        for page in pages:
+            page.save(IMAGE_SAVE_FOLDER +
+                      upload_filename+"-pg"+str(image_counter)+".jpg", 'JPEG')
+
+            qr = decode(Image.open(IMAGE_SAVE_FOLDER +
+                                   upload_filename+".jpg"
+                                   ))
+            image_counter += 1
+    else:
+        qr = decode(Image.open(
+                    upload_filepath))
+
+    print(qr[0].data)
+
+    url = qr[0].data
+    document = requests.get(url)
+
+    xml_content = BeautifulSoup(document.content, "xml")
+    print(xml_content)
+
+    bf = dumps(parker.data(fromstring(str(xml_content))))
+
+    #user_defined_list = """nomorFaktur,tanggalFaktur,npwpPenjual,namaPenjual,alamatPenjual,npwpLawanTransaksi,namaLawanTransaksi,alamatLawanTransaksi,jumlahDpp,jumlahPpn,jumlahPpnBm,statusApproval,statusFaktur,referensi"""
+    user_defined_list = user_defined_list.split(",")
+    result = []
+
+    for predefined in user_defined_list:
+
+        if predefined == "nomorFaktur":
+            nomorFaktur = xml_content.find_all('kdJenisTransaksi')[0].get_text(
+            )+xml_content.find_all('fgPengganti')[0].get_text()+xml_content.find_all('nomorFaktur')[0].get_text()
+            result.append(nomorFaktur)
+        if predefined == "tanggalFaktur":
+            tanggalFaktur = xml_content.find_all('tanggalFaktur')[0].get_text()
+            result.append(tanggalFaktur)
+        if predefined == "npwpPenjual":
+            npwpPenjual = xml_content.find_all('npwpPenjual')[0].get_text()
+            result.append(npwpPenjual)
+        if predefined == "namaPenjual":
+            namaPenjual = xml_content.find_all('namaPenjual')[0].get_text()
+            result.append(namaPenjual)
+        if predefined == "alamatPenjual":
+            alamatPenjual = xml_content.find_all('alamatPenjual')[0].get_text()
+            result.append(alamatPenjual)
+        if predefined == "npwpLawanTransaksi":
+            npwpLawanTransaksi = xml_content.find_all(
+                'npwpLawanTransaksi')[0].get_text()
+            result.append(npwpLawanTransaksi)
+        if predefined == "namaLawanTransaksi":
+            namaLawanTransaksi = xml_content.find_all(
+                'namaLawanTransaksi')[0].get_text()
+            result.append(namaLawanTransaksi)
+        if predefined == "alamatLawanTransaksi":
+            alamatLawanTransaksi = xml_content.find_all(
+                'alamatLawanTransaksi')[0].get_text()
+            result.append(alamatLawanTransaksi)
+        if predefined == "jumlahDpp":
+            jumlahDpp = xml_content.find_all('jumlahDpp')[0].get_text()
+            result.append(jumlahDpp)
+        if predefined == "jumlahPpn":
+            jumlahPpn = xml_content.find_all('jumlahPpn')[0].get_text()
+            result.append(jumlahPpn)
+        if predefined == "jumlahPpnBm":
+            jumlahPpnBm = xml_content.find_all('jumlahPpnBm')[0].get_text()
+            result.append(jumlahPpnBm)
+        if predefined == "statusApproval":
+            statusApproval = xml_content.find_all(
+                'statusApproval')[0].get_text()
+            result.append(statusApproval)
+        if predefined == "statusFaktur":
+            statusFaktur = xml_content.find_all('statusFaktur')[0].get_text()
+            result.append(statusFaktur)
+        if predefined == "referensi":
+            referensi = xml_content.find_all('referensi')[0].get_text()
+            result.append(referensi)
+
+    my_array = [user_defined_list, result]
+
+    pairs = zip(my_array[0], my_array[1])
+    json_values = ('"{}": "{}"'.format(label, value)
+                   for label, value in pairs)
+    my_string = '{' + ', '.join(json_values) + '}'
+
+    my_string = my_string.replace("\n", "")
+
+    export_data = json.loads(my_string)
+
+    json_formatted_str = json.dumps(export_data, indent=2)
+
+    print(json_formatted_str)
+
+    conf_lv = "95%"
+    img_src = IMAGE_SAVE_FOLDER+nomorFaktur+"-pg1.jpg"
+    page.save(img_src, "JPEG")
+
+    return jsonify(result_list=export_data, user_defined_list=user_defined_list, conf_lv=conf_lv, img_src=img_src, result=result)
 
 
 if __name__ == '__main__':
