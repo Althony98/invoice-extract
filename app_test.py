@@ -51,9 +51,9 @@ pytesseract.pytesseract.tesseract_cmd = r"/usr/bin/tesseract"
 # Windows path to tesseract
 #pytesseract.pytesseract.tesseract_cmd = r"C:\\Program Files\\Tesseract-OCR\\tesseract.exe"
 # Althony's Windows
-TVEXTRACT_FOLDER = "/var/www/html/tvextract/application/libraries/python/"
+TVEXTRACT_FOLDER = "/var/www/html/tvextract-web/application/libraries/python/"
 #IMAGE_SAVE_FOLDER = TVEXTRACT_FOLDER+"/static/"
-IMAGE_SAVE_FOLDER = "/var/www/html/tvextract/uploads/static/"
+IMAGE_SAVE_FOLDER = "/var/www/html/tvextract-web/uploads/static/"
 PROCESS_FOLDER_PATH = TVEXTRACT_FOLDER+"process/"
 EXPORT_FOLDER_PATH = TVEXTRACT_FOLDER+"Exports/"
 
@@ -100,6 +100,8 @@ def invert(img):
     img = PIL.ImageOps.invert(np.float32(img))
     cv2.imwrite(r"./preprocess/img_inverted.png", img)
     return img
+
+# Process Invoice
 
 
 @app.route('/', methods=['GET', 'POST'])
@@ -287,7 +289,7 @@ def processing():
 
             # Generate searchable/OCR-ed PDF
             pdf = pytesseract.image_to_pdf_or_hocr(
-                image, extension='pdf', lang="eng", config="--psm 6")
+                image, extension='pdf', lang="eng+ind")
             with open(EXPORT_FOLDER_PATH + upload_filename+"-searchable.pdf", 'w+b') as f:
                 f.write(pdf)  # pdf type is bytes by default
 
@@ -331,7 +333,6 @@ def processing():
             table_json = json.loads(table_json)
             # Footer content
             img = cv2.imread(img_src, 0)
-            print(img)
             image = cv2.resize(img, (1000, 1000))
             thresh = 255 - cv2.threshold(image, 0, 255,
                                          cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU)[1]
@@ -842,8 +843,6 @@ def processID():
     img_data = pytesseract.image_to_data(
         (threshed), lang="ind", config="--psm 6", output_type='data.frame')
 
-    img_data.to_csv("./coordinates.csv")
-
     # loop over each of the individual text localizations
     for i in range(0, len(img_data["text"])):
         # extract the bounding box coordinates of the text region from
@@ -1041,14 +1040,15 @@ def processID():
             hingga = text[text.index(
                 "berlaku")+1]+" "+text[text.index("berlaku")+2]+" "+text[text.index("berlaku")+3]
             matches = datefinder.find_dates(hingga)
-            match_date = hingga
+            match_date = ""
             for match in matches:
-                if(match.date() == None):
-                    match_date = ""
-                else:
+                if(match.date()):
                     match_date += match.date().strftime("%d %b %Y")
+                    print("matched date: "+match_date)
+                    hingga = match_date
                     break
-            hingga = match_date
+
+            hingga = hingga.replace("hingga", "")
             print(hingga)
         elif ("hingga" in text):
             hingga = text[text.index("hingga")+1] + \
@@ -1151,6 +1151,7 @@ def processID():
     processed_image = IMAGE_SAVE_FOLDER+result[1]+"_card.jpg"
     cv2.imwrite(processed_image, img)
 
+    print("--- %s seconds ---" % (time.time() - start_time))
     return jsonify(Output=export_data, upload_filepath=upload_filepath, face_id_url=face_id_url, conf_lv=avgConf_str, doc_type=doc_type, processed_image=processed_image)
 
 
@@ -1401,6 +1402,7 @@ def process_mykad():
     ic_saved_image_path = IMAGE_SAVE_FOLDER+result[0]+".jpg"
     ic_saved_image_path = re.sub(" ", "", ic_saved_image_path)
     cv2.imwrite(ic_saved_image_path, img)
+    print("--- %s seconds ---" % (time.time() - start_time))
     return jsonify(process_mykad_output=export_data, upload_filepath=upload_filepath, doc_type=doc_type, conf_lv=avgConf_str, face_id_url=face_id_url, ic_saved_image_path=ic_saved_image_path)
 
 
@@ -1419,7 +1421,8 @@ def processTaxInvoice():
                       upload_filename+"-pg"+str(image_counter)+".jpg", 'JPEG')
 
             qr = decode(Image.open(IMAGE_SAVE_FOLDER +
-                                   upload_filename+".jpg"
+                                   upload_filename+"-pg" +
+                                   str(image_counter)+".jpg"
                                    ))
             image_counter += 1
     else:
@@ -1508,9 +1511,9 @@ def processTaxInvoice():
     conf_lv = "95%"
     img_src = IMAGE_SAVE_FOLDER+nomorFaktur+"-pg1.jpg"
     page.save(img_src, "JPEG")
-
+    print("--- %s seconds ---" % (time.time() - start_time))
     return jsonify(result_list=export_data, user_defined_list=user_defined_list, conf_lv=conf_lv, img_src=img_src, result=result)
 
 
 if __name__ == '__main__':
-    app.run(host="172.31.41.182", port=8011, debug=True, threaded=True)
+    app.run(port=8011, debug=True, threaded=True)
