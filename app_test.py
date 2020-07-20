@@ -598,7 +598,7 @@ def clean_text_round1(text):
     remove = remove.replace("-", "")
     remove = remove.replace("/", "")
     pattern = r"[{}]".format(remove)  # create the pattern
-    re.sub(pattern, "", text)
+    text = re.sub(pattern, "", text)
 
     return text
 
@@ -1411,6 +1411,7 @@ def processTaxInvoice():
 
     upload_filepath = request.args.get('upload_filepath')
     user_defined_list = request.args.get('predefined')
+    upload_filename = "tax_invoice"
 
     if upload_filepath.endswith('pdf'):
         pages = convert_from_path(upload_filepath)
@@ -1436,8 +1437,6 @@ def processTaxInvoice():
 
     xml_content = BeautifulSoup(document.content, "xml")
     print(xml_content)
-
-    bf = dumps(parker.data(fromstring(str(xml_content))))
 
     #user_defined_list = """nomorFaktur,tanggalFaktur,npwpPenjual,namaPenjual,alamatPenjual,npwpLawanTransaksi,namaLawanTransaksi,alamatLawanTransaksi,jumlahDpp,jumlahPpn,jumlahPpnBm,statusApproval,statusFaktur,referensi"""
     user_defined_list = user_defined_list.split(",")
@@ -1511,8 +1510,401 @@ def processTaxInvoice():
     conf_lv = "95%"
     img_src = IMAGE_SAVE_FOLDER+nomorFaktur+"-pg1.jpg"
     page.save(img_src, "JPEG")
+
+    bf = dumps(parker.data(fromstring(str(xml_content))), indent=2)
+    bf = json.loads(bf)
+
+    table_header = list(bf["detailTransaksi"][0].keys())
+
+    row_item = []
+    row_data = []
+
+    for i in range(0, len(bf["detailTransaksi"])):
+        for j in range(0, len(bf["detailTransaksi"][i])):
+            row_item.append((bf["detailTransaksi"][i][table_header[j]]))
+        row_data.append(row_item)
+        row_item = []
+    table_json = """
+    {
+    "table_header":"""+str(table_header)+""",
+    "row_data":"""+str(row_data)+"""
+    }
+
+    """
+    table_json = table_json.replace("'", "\"")
+
+    table_json = json.loads(table_json)
+
     print("--- %s seconds ---" % (time.time() - start_time))
-    return jsonify(result_list=export_data, user_defined_list=user_defined_list, conf_lv=conf_lv, img_src=img_src, result=result)
+    return jsonify(result_list=export_data, user_defined_list=user_defined_list, conf_lv=conf_lv, img_src=img_src, result=result, table_json=table_json)
+
+
+@app.route('/processBirthCert')
+def processBirthCert():
+    upload_filepath = request.args.get("upload_filepath")
+    user_defined_list = request.args.get("predefined")
+
+    img = cv2.imread(upload_filepath)
+
+    img = cv2.resize(img, (1300, 1800))
+    gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+    th, threshed = cv2.threshold(gray, 150, 255, cv2.THRESH_TRUNC)
+
+    img_data = pytesseract.image_to_data(
+        threshed, lang="ind+eng", config="--psm 6", output_type="data.frame")
+    img_data = img_data.dropna()
+    img_data.to_csv(
+        r"C:\Users\HPC1\Documents\tvextract-master\process\Documents\birth-cert\coor.csv")
+    avgConf_str = calc_conf(img_data)
+    print(avgConf_str)
+
+    text = id_img_data_text(img_data)
+    text = clean_text_round1(text)
+    text = clean_text_round2(text)
+    print(text)
+    text = text.split()
+    print(text)
+
+    user_defined_list = user_defined_list.split(",")
+
+    result = []
+
+    for predefined in user_defined_list:
+        if predefined == "Kependudukan.":
+            try:
+                found_word = text[text.index(predefined)+1]
+                result.append(found_word)
+            except:
+                result.append("")
+        if predefined == "AL.":
+            try:
+                found_word = text[text.index(predefined)+1]
+                result.append(found_word)
+            except:
+                result.append("")
+        if predefined == "NEGARA":
+            try:
+                found_word = text[text.index(predefined)+1]
+                result.append(found_word)
+            except:
+                result.append("")
+        if predefined == "Kelahiran":
+            try:
+                found_word = text[text.index(predefined)+2]
+                result.append(found_word)
+            except:
+                result.append("")
+        if predefined == "bahwa":
+            try:
+                found_word = text[text.index(
+                    predefined)+2:text.index(predefined)+4]
+                found_word = " ".join(found_word)
+                result.append(found_word)
+            except:
+                result.append("")
+        if predefined == "born":
+            try:
+                found_word = text[text.index(predefined)+1]
+                result.append(found_word)
+            except:
+                result.append("")
+        if predefined == "anak":
+            try:
+                found_word = text[text.index(
+                    predefined)+2:text.index(predefined)+4]
+                found_word = " ".join(found_word)
+                result.append(found_word)
+            except:
+                result.append("")
+        if predefined == "AYAH":
+            try:
+                found_word = text[text.index(predefined)+1]
+                result.append(found_word)
+            except:
+                result.append("")
+        if predefined == "IBU":
+            try:
+                found_word = text[text.index(predefined)+1]
+                result.append(found_word)
+            except:
+                result.append("")
+        if predefined == "dikeluarkan":
+            try:
+                found_word = text[text.index(predefined)+2]
+                result.append(found_word)
+            except:
+                result.append("")
+        if predefined == "tanggal":
+            try:
+                found_word = text[text.index(
+                    predefined)+1:text.index(predefined)+4]
+                found_word = " ".join(found_word)
+                result.append(found_word)
+            except:
+                result.append("")
+        if predefined == "Tahun":
+            try:
+                found_word = text[text.index(
+                    predefined)+1:text.index(predefined)+5]
+                found_word = " ".join(found_word)
+                result.append(found_word)
+            except:
+                result.append("")
+        if predefined == "Kepala":
+            try:
+                found_word = text[text.index(
+                    predefined)+1:text.index(predefined)+4]
+                found_word = " ".join(found_word)
+                result.append(found_word)
+            except:
+                result.append("")
+        if predefined == "NIP.":
+            try:
+                found_word = text[text.index(predefined)+1]
+                result.append(found_word)
+            except:
+                result.append("")
+
+    img_src = IMAGE_SAVE_FOLDER+result[0]+".jpg"
+    cv2.imwrite(img_src, img)
+
+    my_array = [user_defined_list, result]
+
+    pairs = zip(my_array[0], my_array[1])
+    json_values = ('"{}": "{}"'.format(label, value)
+                   for label, value in pairs)
+    my_string = '{' + ', '.join(json_values) + '}'
+
+    my_string = my_string.replace("\n", "")
+
+    export_data = json.loads(my_string)
+
+    json_formatted_str = json.dumps(export_data, indent=2)
+
+    print(json_formatted_str)
+
+    return jsonify(result_list=export_data, upload_filepath=upload_filepath, user_defined_list=user_defined_list, result=result, conf_lv=avgConf_str, img_src=img_src)
+
+
+def do_clean_text_round1(text):
+    '''Make text lowercase, remove text in square brackets, remove punctuation and remove words containing numbers.'''
+    #text = text.upper()
+    text = re.sub('\[*—?:§\]', '', text)
+    text = re.sub('§', '', text)
+    text = re.sub("\)", '', text)
+    text = re.sub("\(", '', text)
+    #text = re.sub('[%s]' % re.escape(string.punctuation), '', text)
+    remove = string.punctuation
+    remove = remove.replace(".", "")  # don't remove hyphens
+    remove = remove.replace("-", "")
+    remove = remove.replace("/", "")
+    pattern = r"[{}]".format(remove)  # create the pattern
+    text = re.sub(pattern, "", text)
+
+    return text
+
+# Apply a second round of cleaning
+
+
+def do_clean_text_round2(text):
+    '''Get rid of some additional punctuation and non-sensical text that was missed the first time around.'''
+    text = re.sub('[:—‘’“”…]', '', text)
+    text = re.sub("\[", '', text)
+    text = re.sub("\(", '', text)
+    text = re.sub('<br>', '', text)  # remove for jsonify output
+    text = ftfy.fix_text(text)
+    text = ftfy.fix_encoding(text)
+
+    return text
+
+
+def do_img_data_text(img_data):
+    img_data = img_data.dropna()
+    n_boxes = len(img_data['text'])
+    pd_index = []
+    for i in range(n_boxes):
+        pd_index.append(i)
+    s = pd.Series(pd_index)
+    img_data = img_data.set_index([s])
+    num = 2
+    num2 = 2
+    num3 = 2
+    text = ""
+    min_conf = 0
+    for i in range(n_boxes):
+        if int(img_data["conf"][i]) >= min_conf:
+            if int(img_data.loc[i, 'block_num']) < num:
+                if int(img_data.loc[i, 'line_num']) < num2:
+                    if int(img_data.loc[i, 'par_num']) < num3:
+                        text += img_data.loc[i, 'text'] + " "
+                    else:
+                        num3 += 1
+                        text += "\n"
+                        text += img_data.loc[i, 'text'] + " "
+                else:
+                    num2 += 1
+                    text += "\n"
+                    text += img_data.loc[i, 'text'] + " "
+
+            else:
+                num += 1
+                text += "\n"
+                text += img_data.loc[i, 'text'] + " "
+        # else:
+
+    return text
+
+
+@app.route('/processDeliveryOrder')
+def processDeliveryOrder():
+    upload_filepath = request.args.get("upload_filepath")
+
+    img = cv2.imread(upload_filepath)
+    height = img.shape[0]
+    width = img.shape[1]
+    img = cv2.resize(img, (width*2, height*2))
+    gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+    th, threshed = cv2.threshold(gray, 127, 255, cv2.THRESH_TRUNC)
+    # cv2.imshow("thresh",gray)
+    # cv2.waitKey(0)
+
+    img_data = pytesseract.image_to_data(
+        gray, lang="eng+ind", config="--psm 6", output_type="data.frame")
+    img_data = img_data.dropna()
+    img_data.to_csv(EXPORT_FOLDER_PATH+"do_coordinates.csv")
+    avgConf_str = calc_conf(img_data)
+    print(avgConf_str)
+
+    text = do_img_data_text(img_data)
+    text = do_clean_text_round1(text)
+    text = do_clean_text_round2(text)
+    text_par = text
+    print(text_par)
+    text = text.split()
+
+    user_defined_list = "Do,Date,Phone,Fax,Cust,Address,Code,PO"
+    user_defined_list = user_defined_list.split(",")
+
+    result = []
+
+    for predefined in user_defined_list:
+        if predefined == "Do":
+            try:
+                found_word = text[text.index(predefined)+2]
+                result.append(found_word)
+            except:
+                result.append("")
+        if predefined == "PO":
+            try:
+                found_word = text[text.index(predefined)+2]
+                result.append(found_word)
+            except:
+                result.append("")
+        if predefined == "Date":
+            try:
+                found_word = text[text.index(
+                    predefined)+1:text.index(predefined)+4]
+                found_word = " ".join(found_word)
+                result.append(found_word)
+            except:
+                result.append("")
+        if predefined == "Phone":
+            try:
+                found_word = text[text.index(
+                    predefined)+1:text.index(predefined)+4]
+                found_word = " ".join(found_word)
+                result.append(found_word)
+            except:
+                result.append("")
+        if predefined == "Fax":
+            try:
+                found_word = text[text.index(
+                    predefined)+1:text.index(predefined)+5]
+                found_word = " ".join(found_word)
+                result.append(found_word)
+            except:
+                result.append("")
+        if predefined == "Cust":
+            try:
+                found_word = text[text.index(
+                    predefined)+2:text.index(predefined)+6]
+                found_word = " ".join(found_word)
+                result.append(found_word)
+            except:
+                result.append("")
+        if predefined == "Address":
+            try:
+                found_word = text[text.index(
+                    predefined)+1:text.index(predefined)+10]
+                found_word = " ".join(found_word)
+                result.append(found_word)
+            except:
+                result.append("")
+        if predefined == "Code":
+            try:
+                found_word = text_par.splitlines()[-1]
+                result.append(found_word)
+            except:
+                result.append("")
+
+    img_src = IMAGE_SAVE_FOLDER+result[0]+".jpg"
+    cv2.imwrite(img_src, img)
+
+    my_array = [user_defined_list, result]
+
+    pairs = zip(my_array[0], my_array[1])
+    json_values = ('"{}": "{}"'.format(label, value)
+                   for label, value in pairs)
+    my_string = '{' + ', '.join(json_values) + '}'
+
+    export_data = json.loads(my_string)
+
+    json_formatted_str = json.dumps(export_data, indent=2)
+
+    print(json_formatted_str)
+    pdf = pytesseract.image_to_pdf_or_hocr(
+        img, extension='pdf', lang="eng+ind", config="--psm 6")
+    with open(EXPORT_FOLDER_PATH+"OCR-ed_PDF.pdf", 'w+b') as f:
+        f.write(pdf)  # pdf type is bytes by default
+
+    f.close()
+
+    tabula.convert_into(EXPORT_FOLDER_PATH+"OCR-ed_PDF.pdf", EXPORT_FOLDER_PATH+"do-body.csv",
+                        output_format="csv", pages='all', area=(372.253, 22.559, 745.573, 1735.439))
+
+    try:
+        df = pd.read_csv(EXPORT_FOLDER_PATH+"do-body.csv", encoding='latin1')
+    except:
+        df = pd.DataFrame()
+
+    df['Item Name'] = df[df.columns[1:2]].apply(
+        lambda row: ' '.join(row.values.astype(str)), axis=1)
+    df = df.drop(columns=[df.columns[1]])
+    df.to_csv(EXPORT_FOLDER_PATH+"do-body.csv", index=False)
+
+    exampleFile = open(EXPORT_FOLDER_PATH+"do-body.csv")
+    exampleReader = csv.reader(exampleFile)
+    exampleData = list(exampleReader)
+    row_content = ""
+    for i in range(len(exampleData)):
+        if(i == (len(exampleData)-1)):
+            row_content += "[" + ', '.join(['"{}"'.format(value)
+                                            for value in exampleData[i]])+"]"
+        elif(i != 0):
+            row_content += "[" + ', '.join(['"{}"'.format(value)
+                                            for value in exampleData[i]])+"],"
+
+    table_json = """{
+        "table_header":[""" + ', '.join(['"{}"'.format(value) for value in exampleData[0]])+"""],
+        "row_data": [""" + row_content+"""]
+    }
+    """
+
+    print(table_json)
+
+    table_json = json.loads(table_json)
+
+    return jsonify(result_list=export_data, upload_filepath=upload_filepath, user_defined_list=user_defined_list, result=result, conf_lv=avgConf_str, img_src=img_src)
 
 
 if __name__ == '__main__':
