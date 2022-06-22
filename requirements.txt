@@ -10,7 +10,7 @@ Jinja2==2.11.1
 joblib==0.15.1
 MarkupSafe==1.1.1
 nltk==3.5
-numpy==1.18.2
+numpy==1.22.0
 opencv-python==4.2.0.34
 pandas==1.0.3
 pdf2image==1.12.1
